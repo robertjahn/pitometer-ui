@@ -1,13 +1,19 @@
-# Standalone Pitometer-UI
-This is a standalone version of Pitometer that hosts Pitometer as a service, stores its result in a mongodb, provides an API and a simple WebUI to trigger the following actions
+# Keptn Pitometer Standalone-UI
+Pitometer is part of [keptn](https://www.keptn.sh). This Pitometer keptn UI repository is the first version of on out-of-the-box solution to enforce automated quality gates in your CI/CD Pipeline. It will work either with keptn as your deployment orchestrator or any other CI/CD tool such as Jenkins, Bamboo, Azure DevOps, Tekton, Argo CD, AWS CodePipeline or others.
+
+Keptn Pitometer Standalone UI runs as a service, stores result in a mongodb, provides an API and a simple WebUI to trigger the following actions
 * Clear the Test Results in the Database
 * Run a single Pitometer evaluation
 * Run a set of Pitometer evaluations
 * Display the results of 1 or more results
+* Retrieve the raw results in JSON -> suitable for integrations!
 
-## How to run
+## Outlook: Core part of keptn
+We are planning to integrate this Pitometer UI as part of the keptn's bridge UI. Once available you can leverage Pitometer by simply installing keptn!
+
+## Quick Start!
 1. Clone this repository
-2. Create a secrets.json (for dynatrace url & token) & config.json (port and mongo reference) as shown below
+2. Create a secrets.json and config.json as shown below
 3. Have a mongodb ready, e.g: using docker as described [here](https://www.thachmai.info/2015/04/30/running-mongodb-container/)
 ```
 docker run -d -p 27017:27017 mongo
@@ -98,7 +104,10 @@ secrects.json:
 {
     "DynatraceToken" : "YOUR_TOKEN",
     "DynatraceUrl" : "https://XXXXX.live.dynatrace.com",
-    "PrometheusQueryUrl : "<prometheus query url>
+    "PrometheusQueryUrl : "<prometheus query url>,
+    "NeoloadToken" : "YOUR_NEOLOAD_TOKEN",
+    "NeoloadAPIURL" : "https://neoload-api.saas.neotys.com",
+    "NeoloadWebUploadURL" : "https://neoload-files.saas.neotys.com"
 }
 
 config.json:
@@ -107,6 +116,13 @@ config.json:
     "mongodb" : "mongodb://MONGOSERVER:MONGOPORT/"    
 }
 ```
+
+*secrets.json:* allows you to configure the Pitometer Data Sources and you need to have at least one configured, e.g: Prometheus. 
+For Neoload the only mandatory field is NeoloadToken - the other two are optional and shows values above are defaults
+For Dynatrace you need both Url and Token!
+
+*config.json:* tells Pitometer how to connect to mongodb and the port the Web UI will be exposed.
+MongoDB is NOT MANDATORY. If you leave it out Pitometer will still be able to execute validations with static thresholds
 
 ## Compare With Option
 

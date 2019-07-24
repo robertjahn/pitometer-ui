@@ -1,6 +1,12 @@
+// devDependencies
+// const Pitometer = require("pitometer").Pitometer;
+// const DynatraceSource = require("pitometer-source-dynatrace").Source;
+
+// dependencies
 const Pitometer = require("@keptn/pitometer").Pitometer;
 const DynatraceSource = require("@keptn/pitometer-source-dynatrace").Source;
 const PrometheusSource = require("@keptn/pitometer-source-prometheus").Source
+const NeoloadSource = require("@neotys/pitometer-source-neoload").Source;
 const ThresholdGrader = require("@keptn/pitometer-grader-threshold").Grader;
 const MongoDbAccess = require("@keptn/pitometer").MongoDbAccess;
 const Reporter = require("./dist/Reporter").Reporter;
@@ -21,7 +27,11 @@ if (config.mongodb && config.mongodb != null) {
 }
 
 // 2: Add Dynatrace Data Source
+var hasValidDataSource = false;
+var dataSourceNames = null;
 if (sourceSecrets.DynatraceUrl && sourceSecrets.DynatraceToken) {
+  hasValidDataSource = true;
+  dataSourceNames = "Dynatrace"; 
   console.log("Adding Dynatrace Data Source");
   pitometer.addSource(
     "Dynatrace",
@@ -39,10 +49,43 @@ if (sourceSecrets.DynatraceUrl && sourceSecrets.DynatraceToken) {
 
 // 3: Add Prometheus Data Source
 if (sourceSecrets.PrometheusQueryUrl) {
+  if(hasValidDataSource) dataSourceNames += ", ";
+  dataSourceNames += "Prometheus"; 
+  hasValidDataSource = true;
+
   console.log("Adding Prometheus Data Source");
   pitometer.addSource("Prometheus", new PrometheusSource(sourceSecrets.PrometheusQueryUrl));
 } else {
   console.log("INFO: No Prometheus Data Source configured as PrometheusQueryUrl missing in secrets.json")
+}
+
+// 3: Add Neoload Data Source
+if (sourceSecrets.NeoloadToken) {
+  if(hasValidDataSource) dataSourceNames += ", ";
+  dataSourceNames += "Neoload";
+  hasValidDataSource = true;
+
+  // we have some default for Neoload in case they are not specified in secrets.json
+  if(!sourceSecrets.NeoloadWebUploadURL) sourceSecrets.NeoloadWebUploadUR = "https://neoload-files.saas.neotys.com";
+  if(!sourceSecrets.NeoloadAPIURL) sourceSecrets.NeoloadAPIURL = "https://neoload-api.saas.neotys.com";
+
+  console.log("Adding Neoload Data Source");
+  
+  pitometer.addSource("Neoload", new NeoloadSource( 
+    {
+      neoloadapirul: sourceSecrets.NeoloadAPIURL,
+      neoloadwebuploadurl: sourceSecrets.NeoloadWebUploadURL,
+      apiToken: sourceSecrets.NeoloadToken
+    })
+  );
+} else {
+  console.log("INFO: No Neoload Data Source configured as PrometheusQueryUrl missing in secrets.json")
+}
+
+// validate that we have at least one data source
+if(!hasValidDataSource) {
+  console.log("You have not specified any data source in secrets.json. Pitometer CAN'T run without a data source!")
+  return;
 }
 
 // 3: Add Threshold Grader
@@ -126,11 +169,12 @@ async function testRun(perfspecfile, tags, options) {
  * Generates a report file - the filename will be returned
  * @param {*} context
  * @param {*} compareContext if null will default to 5 (=last 5 runs). also allows you to specify any compareContext query, e.g: last 5 passed runs
+ * @param {Boolean} raw if true will return the Timeseries results as JSON, otherwise it will return the HTML Format
  * @param {*} reportId
  * @param {*} outputfile if specified the output will be written to this file
  * @param {*} callback function(err, outputstring): will be called with the output string as param
  */
-function testReport(context, compareContext, reportId, outputfile, callback) {
+function testReport(context, compareContext, raw, reportId, outputfile, callback) {
   if (compareContext == null) compareContext = 5;
   var options = getOptions(null, null, context, "dummy", compareContext, true);
 
@@ -138,15 +182,20 @@ function testReport(context, compareContext, reportId, outputfile, callback) {
   pitometer.query(options).then(results => {
     var reporter = new Reporter();
     var timeseriesResults = reporter.generateTimeseriesForReport(results);
+
     // console.log(JSON.stringify(timeseriesResults));
 
-    // reading report template files!
-    var mainReport = fs.readFileSync("./report/report.html").toString('utf-8');
-    var seriesTemplate = fs.readFileSync("./report/r_template.html").toString('utf-8');
-
     // replacing placeholders and generating HTML
-    mainReport = mainReport.replace("reportTitlePlaceholder", "Pitometer report: " + reportId);
-    var outputString = reporter.generateHtmlReport(mainReport, seriesTemplate, "<div id=\"placeholder\"/>", timeseriesResults);
+    var outputString = "";
+    if(raw) {
+      outputString = JSON.stringify(timeseriesResults);
+    } else {
+      // reading report template files!
+      var mainReport = fs.readFileSync("./report/report.html").toString('utf-8');
+      var seriesTemplate = fs.readFileSync("./report/r_template.html").toString('utf-8');
+      mainReport = mainReport.replace("reportTitlePlaceholder", "Pitometer report: " + reportId);
+      outputString = reporter.generateHtmlReport(mainReport, seriesTemplate, "<div id=\"placeholder\"/>", timeseriesResults);
+    }
 
     // writing to outpout
     if (outputfile && outputfile != null) {
@@ -316,6 +365,14 @@ var server = http.createServer(function (req, res) {
           // context can either be a string, number of JSON object
           var context = url.query["context"];
           var reportquery = url.query["reportquery"];
+          var raw = url.query["raw"]
+
+          if(raw && raw != null) {
+            raw = Boolean.parse(raw);
+          } else {
+            raw = false;
+          }
+
           if(reportquery != null) {
             if(reportquery.startsWith("{")) {
               try {
@@ -336,9 +393,9 @@ var server = http.createServer(function (req, res) {
             reportquery = 10; // default to last 10 results
           }
 
-          console.log("/api/report: " + context + ", " + reportquery)
+          console.log("/api/report: " + context + ", " + reportquery, + ", raw=" + raw);
 
-          testReport(context, reportquery, "report1", null, function (err, result) {
+          testReport(context, reportquery, raw, "report1", null, function (err, result) {
             logHttpResponse(res, err, result);
           });
         } else {
@@ -350,7 +407,7 @@ var server = http.createServer(function (req, res) {
           else {
             // replace buildnumber and background color
             indexhtml = fs.readFileSync('./resources/index.html').toString()
-            finalHtml = indexhtml.replace("MONGODB", config.mongodb).replace("DYNATRACEURL", dynatraceSecrets.DynatraceUrl).replace("SELFURL", "http://localhost:" + config.port);
+            finalHtml = indexhtml.replace("MONGODB", config.mongodb).replace("DATASOURCES", dataSourceNames).replace("SELFURL", "http://localhost:" + config.port);
           }
 
           res.write(finalHtml);

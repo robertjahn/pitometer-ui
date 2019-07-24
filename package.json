@@ -40,6 +40,7 @@
     "@keptn/pitometer": "^1.1.0",
     "@keptn/pitometer-grader-threshold": "^1.1.0",
     "@keptn/pitometer-source-dynatrace": "^1.0.1",
-    "@keptn/pitometer-source-prometheus": "^1.0.0"
+    "@keptn/pitometer-source-prometheus": "^1.0.0",
+    "@neotys/pitometer-source-neoload": "^1.0.1"
   }
 }
