@@ -2,7 +2,7 @@ npx tsc -w
 
 
 todos
-* include prometheus!
+* Rename to "keptn-pitometer-ui" -> also add keptn logo in UI
 * mongoose -> ORM Mapper
 * Move from Collection per Context to "Single Collection" with Key on Context
 * implement "data only indicators" -> these are indicators that are not graded!
@@ -11,3 +11,5 @@ todos
 Ideas
 * Mark a testrun as "Baseline Run" -> "Flag" individual test runs with a status, e.g: "ingore", "baseline", "xyz"
 * Generate Report of specific Test Run + Compare Test Run! -> extend HTTP parameters for /report 
+* Provide a Webhook to Pitometer that gets called when Pitometer run is finished!
+* Schedule Pitometer Runs to execute e.g: every 30s and use it for alerting -> hence the Webhook option!
