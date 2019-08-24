@@ -19,6 +19,10 @@ const sourceSecrets = require("./secrets.json");
 const config = require("./config.json");
 var mongodb = null;
 
+// for reporting
+var testRunPerfSpecContent = "";
+var testRunCallBackContent =  "";
+
 // 1: Create Pitometer and add optionally add MongoDB Data Store
 const pitometer = new Pitometer();
 if (config.mongodb && config.mongodb != null) {
@@ -32,7 +36,7 @@ var dataSourceNames = null;
 if (sourceSecrets.DynatraceUrl && sourceSecrets.DynatraceToken) {
   hasValidDataSource = true;
   dataSourceNames = "Dynatrace"; 
-  console.log("Adding Dynatrace Data Source");
+  console.log("Adding Dynatrace Data Source: " + sourceSecrets.DynatraceUrl);
   pitometer.addSource(
     "Dynatrace",
     new DynatraceSource({
@@ -53,7 +57,7 @@ if (sourceSecrets.PrometheusQueryUrl) {
   dataSourceNames += "Prometheus"; 
   hasValidDataSource = true;
 
-  console.log("Adding Prometheus Data Source");
+  console.log("Adding Prometheus Data Source: " + sourceSecrets.PrometheusQueryUrl);
   pitometer.addSource("Prometheus", new PrometheusSource(sourceSecrets.PrometheusQueryUrl));
 } else {
   console.log("INFO: No Prometheus Data Source configured as PrometheusQueryUrl missing in secrets.json")
@@ -66,11 +70,12 @@ if (sourceSecrets.NeoloadToken) {
   hasValidDataSource = true;
 
   // we have some default for Neoload in case they are not specified in secrets.json
-  if(!sourceSecrets.NeoloadWebUploadURL) sourceSecrets.NeoloadWebUploadUR = "https://neoload-files.saas.neotys.com";
+  if(!sourceSecrets.NeoloadWebUploadURL) sourceSecrets.NeoloadWebUploadURL = "https://neoload-files.saas.neotys.com";
   if(!sourceSecrets.NeoloadAPIURL) sourceSecrets.NeoloadAPIURL = "https://neoload-api.saas.neotys.com";
 
-  console.log("Adding Neoload Data Source");
-  
+  console.log("Adding Neoload sourceSecrets.NeoloadWebUploadURL: " + sourceSecrets.NeoloadWebUploadURL);
+  console.log("Adding Neoload sourceSecrets.NeoloadAPIURL: " + sourceSecrets.NeoloadAPIURL);
+
   pitometer.addSource("Neoload", new NeoloadSource( 
     {
       neoloadapirul: sourceSecrets.NeoloadAPIURL,
@@ -141,7 +146,6 @@ async function downloadUrl(url) {
  * @param {*} options
  */
 async function testRun(perfspecfile, tags, options) {
-
   var perfSpecContent = "";
   try {
     if(perfspecfile.startsWith("https")) {
@@ -150,17 +154,24 @@ async function testRun(perfspecfile, tags, options) {
       perfSpecContent = fs.readFileSync(perfspecfile).toString('utf-8')
     }
   } catch(err) {
-    console.log(err);
+    console.log("testRun: " + err);
     throw err;
   }
 
   // replace tags if tags were passed!
-  if(tags && tags != null) {
+  if(tags && tags != null && tags != {}) {
+    console.log("testRun: performing tag replacement");
     perfSpecContent = perfSpecContent.replace(new RegExp("TAG_PLACEHOLDER", 'g'), JSON.stringify(tags));
+  }
+  else
+  {
+    console.log("testRun: skipping tag replacement");
   }
 
   var perfSpecJSON = JSON.parse(perfSpecContent);
+  console.log("testRun: perfSpecContent = " + perfSpecContent);
 
+  testRunPerfSpecContent = perfSpecContent;
   // run PerfSpec
   return pitometer.run(perfSpecJSON, options);
 }
@@ -227,7 +238,7 @@ function testReport(context, compareContext, raw, reportId, outputfile, callback
 async function runPitometerTests(perfSpecFile, startTime, length, testRunPrefix, testRunIx, count, context, tags, compareContext, callback) {
   if (count <= 0) {
     if (callback)
-      callback(null, "Finished runs!");
+      callback(null, "<h3>Finished Multi Run</h3>" + "<b>Perfspec Content</b>:" + testRunPerfSpecContent + "<BR><BR>" + testRunCallBackContent);
     return;
   }
 
@@ -241,10 +252,16 @@ async function runPitometerTests(perfSpecFile, startTime, length, testRunPrefix,
     compareContext = JSON.parse(compareContext);
   var options = getOptions(startTime, endTime, context, testRunPrefix + testRunIx, compareContext, true);
 
+  console.log("runPitometerTests: compareContext=" + compareContext)
+
   // run it for the current timeframe!
   testRun(perfSpecFile, tags, options).then(result => {
     // move start time to the next iteration slot
     startTime = endTime;
+    if (callback)
+      console.log("runPitometerTests: count: " + count + " response: " + JSON.stringify(result, null, 2))
+      testRunCallBackContent = testRunCallBackContent + "<b>Run Result #: " + count + "</b>: " + result.result + "&nbsp;&nbsp;&nbsp;<b>Score</b>: " + result.totalScore  + "&nbsp;&nbsp;&nbsp;<b>Compare Context</b>: " + JSON.stringify(result.options.compareContext) + "<BR><b>Pitometer result</b>:" + JSON.stringify(result, null, 2) + "<br><br>";
+      //callback(null, testRunCallBackContent);
     runPitometerTests(perfSpecFile, startTime, length, testRunPrefix, testRunIx + 1, count - 1, context, tags, compareContext, callback);
   }).catch(error => {
     if (callback)
@@ -271,10 +288,14 @@ async function runSinglePitometerTest(perfSpecFile, startTime, endTime, testRunN
     compareContext = JSON.parse(compareContext);
   var options = getOptions(startTime, endTime, context, testRunName, compareContext, true);
 
+  console.log("runSinglePitometerTest: compareContext=" + compareContext)
+
   // run it for the current timeframe!
   testRun(perfSpecFile, tags, options).then(result => {
     if (callback)
-      callback(null, "Finished run!");
+      console.log("runSinglePitometerTest: response: " + JSON.stringify(result, null, 2))
+      testRunCallBackContent = "<h3>Finished Run</h3><b>Run Result</b>: " + result.result + "&nbsp;&nbsp;&nbsp;<b>Score</b>: " + result.totalScore + "&nbsp;&nbsp;&nbsp;<b>Compare Context</b>: " + JSON.stringify(result.options.compareContext) + "<BR><b>Perfspec Content</b>:" + testRunPerfSpecContent + " <BR><b>Pitometer result</b>:" + JSON.stringify(result, null, 2);
+      callback(null, testRunCallBackContent);
     return;
   }).catch(error => {
     if (callback)
@@ -303,12 +324,11 @@ function logHttpResponse(res, err, result) {
 var server = http.createServer(function (req, res) {
   if (req.method === 'GET') {
     res.writeHead(200, 'OK', { 'Content-Type': 'text/html' });
-    console.log(req.url);
     var url = require('url').parse(req.url, true);
 
     if (req.url.startsWith("/api/cleardb")) {
       var context = url.query["context"];
-      console.log("/cleardb:" + context);
+      console.log("Main HttpServer Handler: /cleardb:" + context);
 
       if (mongodb) {
         mongodb.removeAllFromDatabase(context, function (err, result) {
@@ -325,19 +345,22 @@ var server = http.createServer(function (req, res) {
         var count = parseInt(url.query["count"]);
         var testRunPrefix = url.query["testRunPrefix"];
         var testRunIx = parseInt(url.query["testRunIx"]);
-        var tags = JSON.parse(url.query["tags"]);
+        if(url.query["tags"]) {
+          var tags = JSON.parse(url.query["tags"]);
+        }
         var compareContext = url.query["comparecontext"];
         var specFile = url.query["perfspec"];
 
         // set some defaults
         if(isNaN(length)) length=60000; // == 1 Minute
         if(isNaN(count)) count=1;
-        if(!testRunPrefix || testRunPrefix == null || testRunPrefix == "") testRunPrefix = "testrun_";
+        if(!testRunPrefix || testRunPrefix == null || testRunPrefix == "") // JAHN - testRunPrefix = "testrun_";
         if(isNaN(testRunIx)) testRunIx = 1;
         if(!specFile || specFile == null || specFile == "") specFile = "./samples/perfspec.json";
 
         // lets run our tests
-        console.log("/api/multirun: " + specFile + ", " + start + ", " + length + ", " + count + ", " + testRunIx + ", " + JSON.stringify(tags) + ", " + compareContext);
+        console.log("Main HttpServer Handler: /api/multirun: " + specFile + ", " + start + ", " + length + ", " + count + ", " + testRunIx + ", " + JSON.stringify(tags) + ", " + compareContext);
+        testRunCallBackContent="";
         runPitometerTests(specFile, start, length, testRunPrefix, testRunIx, count, context, tags, compareContext, function (err, result) {
           logHttpResponse(res, err, result);
         });
@@ -347,7 +370,9 @@ var server = http.createServer(function (req, res) {
         var start = new Date(url.query["start"]);
         var end = new Date(url.query["end"]);
         var testRunName = url.query["testRunName"];
-        var tags = JSON.parse(url.query["tags"]);
+        if(url.query["tags"]) {
+          var tags = JSON.parse(url.query["tags"]);
+        }
         var compareContext = url.query["comparecontext"];
         var specFile = url.query["perfspec"];
 
@@ -356,7 +381,8 @@ var server = http.createServer(function (req, res) {
         if(!specFile || specFile == null || specFile == "") specFile = "./samples/perfspec.json";
 
         // lets run our tests
-        console.log("/api/singlerun: " + specFile + ", " + start + ", " + end + ", " + testRunName + ", " + JSON.stringify(tags) + ", " + compareContext);
+        console.log("Main HttpServer Handler: /api/singlerun: " + specFile + ", " + start + ", " + end + ", " + testRunName + ", " + JSON.stringify(tags) + ", " + compareContext);
+        testRunCallBackContent="";
         runSinglePitometerTest(specFile, start, end, testRunName, context, tags, compareContext, function (err, result) {
           logHttpResponse(res, err, result);
         });
@@ -379,7 +405,7 @@ var server = http.createServer(function (req, res) {
                 reportquery = JSON.parse(reportquery);
               }
               catch(error) {
-                console.log("Invalid JSON passed: " + error);
+                console.log("Main HttpServer Handler: /api/report: Invalid JSON passed: " + error);
                 logHttpResponse(res, error, null);
                 return;
               }
@@ -387,13 +413,15 @@ var server = http.createServer(function (req, res) {
               var intValue = parseInt(reportquery);
               if(!isNaN(intValue)) {
                 reportquery = intValue;
+                // this still sorts in reverse
+                //reportquery = JSON.parse('{"sort" : {"timestamp" : -1}, "limit" : ' + intValue + '}');
               }  
             }
           } else {
             reportquery = 10; // default to last 10 results
           }
 
-          console.log("/api/report: " + context + ", " + reportquery, + ", raw=" + raw);
+          console.log("Main HttpServer Handler: /api/report: " + context + ", " + reportquery, + ", raw=" + raw);
 
           testReport(context, reportquery, raw, "report1", null, function (err, result) {
             logHttpResponse(res, err, result);
