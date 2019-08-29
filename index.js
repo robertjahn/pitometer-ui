@@ -106,6 +106,7 @@ pitometer.addGrader("Threshold", new ThresholdGrader());
  * @param {*} individualResults
  */
 function getOptions(start, end, context, runId, compareContext, individualResults) {
+  console.log("runId = " + runId);
   return {
     context: context + "/" + runId,
     compareContext: compareContext,
@@ -238,7 +239,7 @@ function testReport(context, compareContext, raw, reportId, outputfile, callback
 async function runPitometerTests(perfSpecFile, startTime, length, testRunPrefix, testRunIx, count, context, tags, compareContext, callback) {
   if (count <= 0) {
     if (callback)
-      callback(null, "<h3>Finished Multi Run</h3>" + "<b>Perfspec Content</b>:" + testRunPerfSpecContent + "<BR><BR>" + testRunCallBackContent);
+      callback(null, "<h3>Finished Multi Run</h3>" + "<b>Perfspec Content</b>:<pre id=\"json\">" + testRunPerfSpecContent + "</pre><BR><BR>" + testRunCallBackContent);
     return;
   }
 
@@ -250,7 +251,8 @@ async function runPitometerTests(perfSpecFile, startTime, length, testRunPrefix,
     compareContext = { find: { result: "pass" }, sort: { timestamp: -1 }, limit: 1 }
   if (typeof (compareContext) == "string" && compareContext.startsWith("{"))
     compareContext = JSON.parse(compareContext);
-  var options = getOptions(startTime, endTime, context, testRunPrefix + testRunIx, compareContext, true);
+  
+  var options = getOptions(startTime, endTime, context, testRunIx, compareContext, true);
 
   console.log("runPitometerTests: compareContext=" + compareContext)
 
@@ -260,7 +262,7 @@ async function runPitometerTests(perfSpecFile, startTime, length, testRunPrefix,
     startTime = endTime;
     if (callback)
       console.log("runPitometerTests: count: " + count + " response: " + JSON.stringify(result, null, 2))
-      testRunCallBackContent = testRunCallBackContent + "<b>Run Result #: " + count + "</b>: " + result.result + "&nbsp;&nbsp;&nbsp;<b>Score</b>: " + result.totalScore  + "&nbsp;&nbsp;&nbsp;<b>Compare Context</b>: " + JSON.stringify(result.options.compareContext) + "<BR><b>Pitometer result</b>:" + JSON.stringify(result, null, 2) + "<br><br>";
+      testRunCallBackContent = testRunCallBackContent + "<b>Run Result #: " + count + "</b>:" + result.result + "&nbsp;&nbsp;&nbsp;<b>Score</b>: " + result.totalScore  + "&nbsp;&nbsp;&nbsp;<b>Compare Context</b>: " + JSON.stringify(result.options.compareContext) + "<BR><b>Pitometer result</b>:<pre id=\"json1\">" + JSON.stringify(result, null, 2) + "</pre><br><br>";
       //callback(null, testRunCallBackContent);
     runPitometerTests(perfSpecFile, startTime, length, testRunPrefix, testRunIx + 1, count - 1, context, tags, compareContext, callback);
   }).catch(error => {
@@ -294,7 +296,7 @@ async function runSinglePitometerTest(perfSpecFile, startTime, endTime, testRunN
   testRun(perfSpecFile, tags, options).then(result => {
     if (callback)
       console.log("runSinglePitometerTest: response: " + JSON.stringify(result, null, 2))
-      testRunCallBackContent = "<h3>Finished Run</h3><b>Run Result</b>: " + result.result + "&nbsp;&nbsp;&nbsp;<b>Score</b>: " + result.totalScore + "&nbsp;&nbsp;&nbsp;<b>Compare Context</b>: " + JSON.stringify(result.options.compareContext) + "<BR><b>Perfspec Content</b>:" + testRunPerfSpecContent + " <BR><b>Pitometer result</b>:" + JSON.stringify(result, null, 2);
+      testRunCallBackContent = "<h3>Finished Run</h3><b>Run Result</b>: " + result.result + "&nbsp;&nbsp;&nbsp;<b>Score</b>: " + result.totalScore + "&nbsp;&nbsp;&nbsp;<b>Compare Context</b>: " + JSON.stringify(result.options.compareContext) + "<BR><b>Perfspec Content</b>:<pre id=\"json1\">" + testRunPerfSpecContent + "</pre><BR><b>Pitometer result</b>:<pre id=\"json1\">" + JSON.stringify(result, null, 2) + "</pre>";
       callback(null, testRunCallBackContent);
     return;
   }).catch(error => {
@@ -354,7 +356,7 @@ var server = http.createServer(function (req, res) {
         // set some defaults
         if(isNaN(length)) length=60000; // == 1 Minute
         if(isNaN(count)) count=1;
-        if(!testRunPrefix || testRunPrefix == null || testRunPrefix == "") // JAHN - testRunPrefix = "testrun_";
+        testRunPrefix == "";
         if(isNaN(testRunIx)) testRunIx = 1;
         if(!specFile || specFile == null || specFile == "") specFile = "./samples/perfspec.json";
 
@@ -413,8 +415,6 @@ var server = http.createServer(function (req, res) {
               var intValue = parseInt(reportquery);
               if(!isNaN(intValue)) {
                 reportquery = intValue;
-                // this still sorts in reverse
-                //reportquery = JSON.parse('{"sort" : {"timestamp" : -1}, "limit" : ' + intValue + '}');
               }  
             }
           } else {
